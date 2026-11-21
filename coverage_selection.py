@@ -112,6 +112,23 @@ def is_covered_body_edit(source: str, diff: str, coverage: dict) -> bool:
     return bool(old_lines) and removed <= old_lines and added <= new_lines
 
 
+def changed_function_tests(before, after, coverage):
+    """Return tests covering changed function bodies, or None for incomplete data."""
+    _, old_functions = source_shape(before)
+    _, new_functions = source_shape(after)
+    if len(old_functions) != len(new_functions):
+        return None
+    used = set()
+    table = coverage.get("function_tests", {})
+    for (before_body, lines, _), (after_body, _, _) in zip(old_functions, new_functions):
+        if before_body != after_body:
+            hits = table.get(str(lines.start))
+            if not hits:
+                return None
+            used.update(hits)
+    return used or None
+
+
 def boolean_shape(source):
     """Compare short-circuit operator structure independently of source positions."""
     return [type(item.op) for item in ast.walk(ast.parse(source)) if isinstance(item, ast.BoolOp)]
@@ -132,7 +149,7 @@ def select_covered_tests(
         if sections[0] or len(sections) < 3:
             return tests
 
-        candidates = set()
+        candidates, file_candidates = set(), set()
         widen_test_files = widen
         for header, body in zip(sections[1::2], sections[2::2]):
             match = IN_PLACE.match(header + body)
@@ -148,10 +165,14 @@ def select_covered_tests(
                 return tests
             after, _, _ = apply_hunks(source, diff)
             widen_test_files |= boolean_shape(source) != boolean_shape(after)
-            candidates.update(coverage["tests"])
+            file_candidates.update(coverage["tests"])
+            direct = changed_function_tests(source, after, coverage)
+            candidates.update(direct if direct is not None else coverage["tests"])
     except (OSError, UnicodeError, ValueError, SyntaxError, RecursionError):
         return tests
 
+    if widen_test_files:
+        candidates = file_candidates
     if candidates.isdisjoint(test["id"] for test in tests):
         return tests
     candidates.update(always_run)

@@ -5,7 +5,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from functools import wraps
 
-from coverage_selection import apply_hunks, boolean_shape, is_covered_body_edit, source_shape
+from coverage_selection import apply_hunks, boolean_shape, changed_function_tests, is_covered_body_edit
 from fixture_selection import DIFF_HEADER, IN_PLACE
 
 DIALECT_AREAS = {"dialects", "parsers", "generators", "tokenizers", "typing"}
@@ -22,9 +22,9 @@ class DialectTrace:
         self.by_test = defaultdict(set)
         self.shared = set()
 
-    def _record(self, dialect):
+    def _record(self, dialect, role=None):
         used = self.shared if self.active_test is None else self.by_test[self.active_test]
-        used.add(type(dialect))
+        used.add((type(dialect), role))
 
     def install(self):
         from sqlglot import Dialect
@@ -39,22 +39,23 @@ class DialectTrace:
 
         Dialect.get_or_raise = classmethod(lookup)
 
-        def observe(method):
+        def observe(method, role):
             @wraps(method)
             def observed(instance, /, *args, **kwargs):
-                self._record(instance)
+                self._record(instance, role)
                 return method(instance, *args, **kwargs)
 
             return observed
 
         for method_name in ("__init__", "parser", "generator", "tokenizer"):
-            setattr(Dialect, method_name, observe(getattr(Dialect, method_name)))
+            role = None if method_name == "__init__" else method_name
+            setattr(Dialect, method_name, observe(getattr(Dialect, method_name), role))
 
     @staticmethod
-    def _modules(dialect):
+    def _modules(dialect, role):
         implementations = [dialect]
-        for name in ("parser_class", "generator_class", "tokenizer_class"):
-            implementation = getattr(dialect, name, None)
+        if role is not None:
+            implementation = getattr(dialect, role + "_class", None)
             if isinstance(implementation, type):
                 implementations.append(implementation)
         found = defaultdict(set)
@@ -79,15 +80,15 @@ class DialectTrace:
     def export(self, passed):
         tests_by_dialect = defaultdict(set)
         for test in passed:
-            for dialect in self.by_test.get(test, ()):
-                tests_by_dialect[dialect].add(test)
+            for usage in self.by_test.get(test, ()):
+                tests_by_dialect[usage].add(test)
 
         users, owners = defaultdict(set), defaultdict(set)
-        for dialect, tests in tests_by_dialect.items():
-            for path, classes in self._modules(dialect).items():
+        for (dialect, role), tests in tests_by_dialect.items():
+            for path, classes in self._modules(dialect, role).items():
                 users[path].update(tests)
                 owners[path].update(classes)
-        shared = {path for dialect in self.shared for path in self._modules(dialect)}
+        shared = {path for usage in self.shared for path in self._modules(*usage)}
         return {
             path: {"tests": sorted(tests), "classes": sorted(owners[path])}
             for path, tests in sorted(users.items()) if path not in shared
@@ -150,16 +151,6 @@ def _is_local_table_edit(before, after, removed, added, owners):
     return bool(old_lines) and removed <= old_lines and added <= new_lines
 
 
-def _scope_tests(before, after, coverage):
-    _, old_functions = source_shape(before)
-    _, new_functions = source_shape(after)
-    used = set()
-    for (old_body, lines, _), (new_body, _, _) in zip(old_functions, new_functions):
-        if old_body != new_body:
-            used.update(coverage["function_tests"].get(str(lines.start), ()))
-    return used
-
-
 def select_dialect_tests(contents, tests, coverage_map, baseline, always_run, *, widen=False):
     """Use observed dialect users and function hits for isolated changes."""
     sections = DIFF_HEADER.split(contents)
@@ -182,12 +173,20 @@ def select_dialect_tests(contents, tests, coverage_map, baseline, always_run, *,
             diff = body[body.index("\n@@ ") + 1:]
             after, removed, added = apply_hunks(before, diff)
 
+            use_role = True
             if is_covered_body_edit(before, diff, coverage):
-                direct = _scope_tests(before, after, coverage)
+                direct = changed_function_tests(before, after, coverage)
+                if direct is None:
+                    return None
                 if boolean_shape(before) != boolean_shape(after):
-                    if not path.startswith("sqlglot/typing/") or not direct:
+                    if path.startswith("sqlglot/typing/"):
+                        widen_ids.update(direct)
+                    else:
+                        # Parser short-circuit changes can exercise paths absent
+                        # from the recorded dialect trace. Widen by test file.
                         return None
-                    widen_ids.update(direct)
+                else:
+                    use_role = False
                 candidates.update(direct)
                 if widen:
                     widen_ids.update(direct)
@@ -198,7 +197,8 @@ def select_dialect_tests(contents, tests, coverage_map, baseline, always_run, *,
                         widen_ids.update(test_ids)
             else:
                 return None
-            candidates.update(ownership["tests"])
+            if use_role:
+                candidates.update(ownership["tests"])
     except (OSError, UnicodeError, ValueError, SyntaxError, RecursionError):
         return None
     if candidates.isdisjoint(test["id"] for test in tests):

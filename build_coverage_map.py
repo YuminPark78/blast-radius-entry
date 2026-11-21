@@ -13,12 +13,14 @@ import pytest
 
 from coverage_selection import source_shape
 from dialect_selection import DialectTrace, is_dialect_module
+from expression_selection import ExpressionTrace
 
 
 class CoverageContexts:
     def __init__(self, collector, root: Path):
         self.collector = collector
         self.dialects = DialectTrace()
+        self.expression_tables = ExpressionTrace(self)
         self.root = root
         self.fixture_root = root / "tests" / "fixtures"
         self.fixture_readers: dict[str, set[str]] = defaultdict(set)
@@ -121,9 +123,11 @@ def main():
     contexts.trace_fixtures = True
     try:
         contexts.dialects.install()
+        contexts.expression_tables.start()
         result = pytest.main(["-o", "addopts=", "-q", "tests"], plugins=[contexts])
     finally:
         contexts.trace_fixtures = False
+        contexts.expression_tables.stop()
         collector.stop()
     if contexts.collection_failed or result not in (
         pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED
@@ -174,6 +178,7 @@ def main():
         "baseline_passed": sorted(passed),
         "files": files,
         "dialect_usage": contexts.dialects.export(passed),
+        "expression_tables": contexts.expression_tables.export(),
         "source_reads": sorted(contexts.shared_source_reads | contexts.source_readers.keys()),
         "source_readers": {
             name: sorted(tests)
@@ -191,6 +196,7 @@ def main():
         f"Mapped readers for {len(document['fixture_readers'])} SQL fixtures; "
         f"{len(contexts.shared_fixtures)} had shared reads"
     )
+    print(f"Traced reads for {len(document['expression_tables'])} expression argument tables")
     print(f"Mapped test usage of {len(document['dialect_usage'])} dialect implementation modules")
     print(f"Observed direct reads of {len(document['source_reads'])} Python source files")
     print(f"Mapped {len(files)} source files over {len(measured)} passing tests with coverage")

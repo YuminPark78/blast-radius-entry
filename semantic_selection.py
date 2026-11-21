@@ -6,6 +6,7 @@ from types import CodeType
 
 from coverage_selection import apply_hunks, select_covered_tests
 from dialect_selection import select_dialect_tests
+from expression_selection import select_expression_tables
 from fixture_selection import DIFF_HEADER, IN_PLACE, select_traced_fixture_tests
 
 
@@ -107,6 +108,8 @@ def select_patch_tests(
             python_diff, tests, coverage_map, baseline, always_run, widen=bool(fixture_sections),
         )
         used_dialect_map = code is not None
+        if code is None and not fixture_sections:
+            code = select_expression_tables(python_diff, tests, coverage_map, baseline, always_run)
         if code is None:
             code = select_covered_tests(
                 python_diff, tests, coverage_map["files"], baseline, always_run=always_run,
