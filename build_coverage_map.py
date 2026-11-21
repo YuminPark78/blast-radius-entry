@@ -1,12 +1,15 @@
 """Run the pinned test suite once and write source-file coverage by pytest ID."""
 
 import argparse
+import ast
 import json
 import os
 from pathlib import Path
 
 import coverage
 import pytest
+
+from coverage_selection import source_functions
 
 
 class CoverageContexts:
@@ -65,20 +68,29 @@ def main():
     for filename in sorted(data.measured_files()):
         relative_path = Path(filename).relative_to(root).as_posix()
         contexts_by_line = data.contexts_by_lineno(filename)
-        tests, shared_lines, tested_lines = set(), [], []
+        tests, shared_lines, line_tests = set(), [], {}
         for number, names in sorted(contexts_by_line.items()):
             ran_here = passed.intersection(names)
             if ran_here:
                 tests.update(ran_here)
-                tested_lines.append(number)
+                line_tests[number] = ran_here
             if "" in names:
                 shared_lines.append(number)
         if tests:
+            functions = {}
+            tree = ast.parse(Path(filename).read_bytes())
+            for function in source_functions(tree):
+                first_line = function.body[0].lineno
+                hits = set()
+                for number in range(first_line, function.end_lineno + 1):
+                    hits.update(line_tests.get(number, ()))
+                if hits:
+                    functions[str(first_line)] = sorted(hits)
             measured.update(tests)
             files[relative_path] = {
                 "tests": sorted(tests),
                 "shared_lines": shared_lines,
-                "tested_lines": tested_lines,
+                "functions": functions,
             }
 
     if not files:
