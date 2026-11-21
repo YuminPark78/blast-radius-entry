@@ -72,9 +72,9 @@ def main() -> None:
         print(f"Always including {len(always_run)} tests without reliable coverage", file=sys.stderr)
 
     full_schedule = choose_workers(tests)
-    narrowed = fixture_narrowed = identical_python = 0
+    narrowed = fixture_narrowed = identical_python = dialect_narrowed = 0
     for patch in sorted((DATA / "commits").glob("*.patch")):
-        selected, equivalent, fixture = select_patch_tests(
+        selected, equivalent, fixture, dialect = select_patch_tests(
             patch, tests, coverage_map, BASELINE, baseline_passed, always_run,
             source_reads, declared_readers,
         )
@@ -82,9 +82,10 @@ def main() -> None:
         narrowed += len(selected) < len(tests)
         fixture_narrowed += fixture and len(selected) < len(tests)
         identical_python += equivalent
+        dialect_narrowed += dialect and len(selected) < len(tests)
         print(json.dumps({"commit": patch.stem, "workers": workers}))
     print(
-        f"Narrowed {narrowed} patches ({fixture_narrowed} with fixtures); "
+        f"Narrowed {narrowed} patches ({fixture_narrowed} with fixtures, {dialect_narrowed} by dialect); "
         f"matched Python AST and bytecode in {identical_python} patches", file=sys.stderr,
     )
 

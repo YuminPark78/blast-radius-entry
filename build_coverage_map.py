@@ -11,10 +11,14 @@ from threading import get_ident
 import coverage
 import pytest
 
+from coverage_selection import source_shape
+from dialect_selection import DialectTrace, is_dialect_module
+
 
 class CoverageContexts:
     def __init__(self, collector, root: Path):
         self.collector = collector
+        self.dialects = DialectTrace()
         self.root = root
         self.fixture_root = root / "tests" / "fixtures"
         self.fixture_readers: dict[str, set[str]] = defaultdict(set)
@@ -50,6 +54,14 @@ class CoverageContexts:
             self.shared_fixtures.add(name)
         else:
             self.fixture_readers[name].add(self.active_test)
+
+    @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+    def pytest_runtest_protocol(self, item):
+        self.dialects.active_test = item.nodeid
+        try:
+            yield
+        finally:
+            self.dialects.active_test = None
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtest_call(self, item):
@@ -89,6 +101,7 @@ def main():
     collector.start()
     contexts.trace_fixtures = True
     try:
+        contexts.dialects.install()
         result = pytest.main(["-o", "addopts=", "-q", "tests"], plugins=[contexts])
     finally:
         contexts.trace_fixtures = False
@@ -106,11 +119,15 @@ def main():
         relative_path = Path(filename).relative_to(root).as_posix()
         contexts_by_line = data.contexts_by_lineno(filename)
         tests, shared_lines, tested_lines = set(), [], []
+        dialect_module = is_dialect_module(relative_path)
+        line_tests = {}
         for number, names in sorted(contexts_by_line.items()):
             ran_here = passed.intersection(names)
             if ran_here:
                 tests.update(ran_here)
                 tested_lines.append(number)
+                if dialect_module:
+                    line_tests[number] = ran_here
             if "" in names:
                 shared_lines.append(number)
         if tests:
@@ -120,6 +137,16 @@ def main():
                 "shared_lines": shared_lines,
                 "tested_lines": tested_lines,
             }
+            if dialect_module:
+                _, functions = source_shape(Path(filename).read_text(encoding="utf-8"))
+                function_tests = {}
+                for _, lines, _ in functions:
+                    users = set()
+                    for number in lines:
+                        users.update(line_tests.get(number, ()))
+                    if users:
+                        function_tests[str(lines.start)] = sorted(users)
+                files[relative_path]["function_tests"] = function_tests
 
     if not files:
         raise SystemExit("No per-test SQLGlot coverage was collected")
@@ -127,6 +154,7 @@ def main():
         "measured": sorted(measured),
         "baseline_passed": sorted(passed),
         "files": files,
+        "dialect_usage": contexts.dialects.export(passed),
         "source_reads": sorted(contexts.source_reads),
         "fixture_readers": {
             name: sorted(readers)
@@ -139,6 +167,7 @@ def main():
         f"Mapped readers for {len(document['fixture_readers'])} SQL fixtures; "
         f"{len(contexts.shared_fixtures)} had shared reads"
     )
+    print(f"Mapped test usage of {len(document['dialect_usage'])} dialect implementation modules")
     print(f"Observed direct reads of {len(contexts.source_reads)} Python source files")
     print(f"Mapped {len(files)} source files over {len(measured)} passing tests with coverage")
     print(f"Baseline had {len(contexts.nonpassing)} failed or skipped tests")

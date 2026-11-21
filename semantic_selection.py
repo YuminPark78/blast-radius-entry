@@ -5,6 +5,7 @@ from pathlib import Path
 from types import CodeType
 
 from coverage_selection import apply_hunks, select_covered_tests
+from dialect_selection import select_dialect_tests
 from fixture_selection import DIFF_HEADER, IN_PLACE, select_traced_fixture_tests
 
 
@@ -35,19 +36,19 @@ def select_patch_tests(
     always_run: frozenset[str],
     source_reads: frozenset[str],
     declared_readers: dict[str, list[str]],
-) -> tuple[list[dict], bool, bool]:
-    """Return selected tests and whether equivalent Python or fixtures were handled."""
+) -> tuple[list[dict], bool, bool, bool]:
+    """Return selected tests and whether equivalent Python, fixtures, or dialects were handled."""
     try:
         sections = DIFF_HEADER.split(patch.read_text(encoding="utf-8"))
         if sections[0] or len(sections) < 3:
-            return tests, False, False
+            return tests, False, False, False
 
         fixture_sections, python_sections = [], []
         equivalent = False
         for header, body in zip(sections[1::2], sections[2::2]):
             match = IN_PLACE.match(header + body)
             if match is None:
-                return tests, False, False
+                return tests, False, False, False
             path = match["path"]
             section = f"diff --git {header}{body}"
             if path.startswith("tests/fixtures/") and path.endswith(".sql"):
@@ -62,13 +63,13 @@ def select_patch_tests(
                         continue
                 python_sections.append(section)
             else:
-                return tests, False, False
+                return tests, False, False, False
     except (OSError, UnicodeError, ValueError, SyntaxError, RecursionError):
-        return tests, False, False
+        return tests, False, False, False
 
     if fixture_sections and python_sections:
         # A fixture edit can take a different source path on the same patch.
-        return tests, equivalent, False
+        return tests, equivalent, False, False
 
     selected = {test["id"] for test in tests if test["id"] not in baseline_passed}
     if fixture_sections:
@@ -77,14 +78,21 @@ def select_patch_tests(
             baseline_passed, declared_readers,
         )
         if fixtures is None:
-            return tests, equivalent, False
+            return tests, equivalent, False, False
         selected.update(test["id"] for test in fixtures)
+    used_dialect_map = False
     if python_sections:
-        code = select_covered_tests(
-            "".join(python_sections), tests, coverage_map["files"], baseline,
-            always_run=always_run,
-        )
+        python_diff = "".join(python_sections)
+        code = select_dialect_tests(python_diff, tests, coverage_map, baseline, always_run)
+        used_dialect_map = code is not None
+        if code is None:
+            code = select_covered_tests(
+                python_diff, tests, coverage_map["files"], baseline, always_run=always_run,
+            )
         if code is tests:
-            return tests, equivalent, bool(fixture_sections)
+            return tests, equivalent, bool(fixture_sections), False
         selected.update(test["id"] for test in code)
-    return [test for test in tests if test["id"] in selected], equivalent, bool(fixture_sections)
+    return (
+        [test for test in tests if test["id"] in selected],
+        equivalent, bool(fixture_sections), used_dialect_map,
+    )

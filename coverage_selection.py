@@ -112,6 +112,11 @@ def is_covered_body_edit(source: str, diff: str, coverage: dict) -> bool:
     return bool(old_lines) and removed <= old_lines and added <= new_lines
 
 
+def boolean_shape(source):
+    """Compare short-circuit operator structure independently of source positions."""
+    return [type(item.op) for item in ast.walk(ast.parse(source)) if isinstance(item, ast.BoolOp)]
+
+
 def select_covered_tests(
     contents: str,
     tests: list[dict],
@@ -127,6 +132,7 @@ def select_covered_tests(
             return tests
 
         candidates = set()
+        widen_test_files = False
         for header, body in zip(sections[1::2], sections[2::2]):
             match = IN_PLACE.match(header + body)
             if match is None:
@@ -139,14 +145,18 @@ def select_covered_tests(
             diff = body[body.index("\n@@ ") + 1:]
             if not is_covered_body_edit(source, diff, coverage):
                 return tests
+            after, _, _ = apply_hunks(source, diff)
+            widen_test_files |= boolean_shape(source) != boolean_shape(after)
             candidates.update(coverage["tests"])
-    except (OSError, UnicodeError, ValueError, SyntaxError):
+    except (OSError, UnicodeError, ValueError, SyntaxError, RecursionError):
         return tests
 
     if candidates.isdisjoint(test["id"] for test in tests):
         return tests
     candidates.update(always_run)
-    # Coverage from the baseline can omit tests in the same test module that
-    # reach different code paths after the patch.
+    if not widen_test_files:
+        return [test for test in tests if test["id"] in candidates]
+
+    # Short-circuit changes can exercise paths omitted by baseline coverage.
     test_files = {test["file"] for test in tests if test["id"] in candidates}
     return [test for test in tests if test["file"] in test_files]

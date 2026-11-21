@@ -6,12 +6,12 @@ ADD https://github.com/tobymao/sqlglot/archive/eb11aec4be8cb2122afe713a4816662c3
 RUN mkdir /baseline && tar -xzf /tmp/sqlglot.tar.gz -C /baseline --strip-components=1
 COPY requirements.lock /build/
 RUN python -m pip install --no-cache-dir -r /build/requirements.lock coverage==7.10.7
-COPY build_coverage_map.py /build/
+COPY build_coverage_map.py coverage_selection.py fixture_selection.py dialect_selection.py /build/
 RUN python -m compileall -q /baseline/sqlglot \
  && SKIP_INTEGRATION=0 PYTHONPATH=/baseline python /build/build_coverage_map.py /baseline /build/coverage_map.json
 
 FROM baseline
 COPY --from=coverage-build /baseline/sqlglot /baseline/sqlglot
 COPY --from=coverage-build /build/coverage_map.json /app/coverage_map.json
-COPY selector.py coverage_selection.py fixture_selection.py semantic_selection.py fixture_map.json /app/
+COPY selector.py coverage_selection.py fixture_selection.py semantic_selection.py dialect_selection.py fixture_map.json /app/
 CMD ["python", "/app/selector.py"]
