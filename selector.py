@@ -2,11 +2,14 @@
 
 import json
 import math
+import sys
 from pathlib import Path
 
-from fixture_selection import select_tests
+from coverage_selection import select_covered_tests
 
 DATA = Path("/data")
+BASELINE = Path("/baseline")
+COVERAGE_MAP = Path(__file__).with_name("coverage_map.json")
 WORKERS = 3  # Fixed worker count for the sample audit baseline.
 MAX_WORKERS = 8
 WORKER_COST_MS = 2_000
@@ -57,14 +60,22 @@ def choose_workers(tests: list[dict]) -> list[list[int]]:
 
 def main() -> None:
     tests = json.loads((DATA / "tests.json").read_text(encoding="utf-8"))["tests"]
-    map_path = Path(__file__).with_name("fixture_map.json")
-    fixture_map = json.loads(map_path.read_text(encoding="utf-8"))
+    coverage_map = json.loads(COVERAGE_MAP.read_text(encoding="utf-8"))
+    measured = set(coverage_map["measured"])
+    always_run = frozenset(test["id"] for test in tests if test["id"] not in measured)
+    if always_run:
+        print(f"Always including {len(always_run)} tests without reliable coverage", file=sys.stderr)
 
     full_schedule = choose_workers(tests)
+    narrowed = 0
     for patch in sorted((DATA / "commits").glob("*.patch")):
-        selected = select_tests(patch, tests, fixture_map, method_level=False)
+        selected = select_covered_tests(
+            patch, tests, coverage_map["files"], BASELINE, always_run=always_run
+        )
         workers = full_schedule if selected is tests else choose_workers(selected)
+        narrowed += len(selected) < len(tests)
         print(json.dumps({"commit": patch.stem, "workers": workers}))
+    print(f"Coverage narrowed {narrowed} patches", file=sys.stderr)
 
 
 if __name__ == "__main__":
