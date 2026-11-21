@@ -2,17 +2,18 @@
 
 import ast
 from collections import defaultdict
+from collections.abc import Mapping
 from functools import wraps
 
 from coverage_selection import apply_hunks, boolean_shape, is_covered_body_edit, source_shape
 from fixture_selection import DIFF_HEADER, IN_PLACE
 
-DIALECT_AREAS = {"dialects", "parsers", "generators", "tokenizers"}
+DIALECT_AREAS = {"dialects", "parsers", "generators", "tokenizers", "typing"}
 
 
 def is_dialect_module(path):
     parts = path.split("/")
-    return len(parts) == 3 and parts[0] == "sqlglot" and parts[1] in DIALECT_AREAS and path.endswith(".py")
+    return len(parts) == 3 and parts[0] == "sqlglot" and parts[1] in DIALECT_AREAS and path.endswith(".py") and not path.endswith("/__init__.py")
 
 
 class DialectTrace:
@@ -62,6 +63,17 @@ class DialectTrace:
                 path = owner.__module__.replace(".", "/") + ".py"
                 if is_dialect_module(path):
                     found[path].add(owner.__qualname__)
+
+        metadata = getattr(dialect, "EXPRESSION_METADATA", {})
+        if isinstance(metadata, Mapping):
+            for entry in metadata.values():
+                if not isinstance(entry, Mapping):
+                    continue
+                annotator = entry.get("annotator")
+                module = getattr(annotator, "__module__", "")
+                path = module.replace(".", "/") + ".py"
+                if module.startswith("sqlglot.typing.") and is_dialect_module(path):
+                    found[path].add(getattr(annotator, "__qualname__", ""))
         return found
 
     def export(self, passed):
@@ -148,7 +160,7 @@ def _scope_tests(before, after, coverage):
     return used
 
 
-def select_dialect_tests(contents, tests, coverage_map, baseline, always_run):
+def select_dialect_tests(contents, tests, coverage_map, baseline, always_run, *, widen=False):
     """Use observed dialect users and function hits for isolated changes."""
     sections = DIFF_HEADER.split(contents)
     paths = coverage_map.get("dialect_usage", {})
@@ -156,7 +168,7 @@ def select_dialect_tests(contents, tests, coverage_map, baseline, always_run):
     if sections[0] or len(sections) < 3 or not paths:
         return None
 
-    candidates = set()
+    candidates, widen_ids = set(), set()
     try:
         for header, body in zip(sections[1::2], sections[2::2]):
             match = IN_PLACE.match(header + body)
@@ -171,12 +183,19 @@ def select_dialect_tests(contents, tests, coverage_map, baseline, always_run):
             after, removed, added = apply_hunks(before, diff)
 
             if is_covered_body_edit(before, diff, coverage):
+                direct = _scope_tests(before, after, coverage)
                 if boolean_shape(before) != boolean_shape(after):
-                    return None
-                candidates.update(_scope_tests(before, after, coverage))
+                    if not path.startswith("sqlglot/typing/") or not direct:
+                        return None
+                    widen_ids.update(direct)
+                candidates.update(direct)
+                if widen:
+                    widen_ids.update(direct)
             elif _is_local_table_edit(before, after, removed, added, ownership["classes"]):
                 for test_ids in coverage["function_tests"].values():
                     candidates.update(test_ids)
+                    if widen:
+                        widen_ids.update(test_ids)
             else:
                 return None
             candidates.update(ownership["tests"])
@@ -185,4 +204,8 @@ def select_dialect_tests(contents, tests, coverage_map, baseline, always_run):
     if candidates.isdisjoint(test["id"] for test in tests):
         return None
     candidates.update(always_run)
-    return [test for test in tests if test["id"] in candidates]
+    files_to_widen = {test["file"] for test in tests if test["id"] in widen_ids}
+    return [
+        test for test in tests
+        if test["id"] in candidates or test["file"] in files_to_widen
+    ]

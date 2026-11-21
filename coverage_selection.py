@@ -124,6 +124,7 @@ def select_covered_tests(
     baseline: Path,
     *,
     always_run: frozenset[str] = frozenset(),
+    widen: bool = False,
 ) -> list[dict]:
     """Narrow covered function-body edits and otherwise keep all test IDs."""
     try:
@@ -132,7 +133,7 @@ def select_covered_tests(
             return tests
 
         candidates = set()
-        widen_test_files = False
+        widen_test_files = widen
         for header, body in zip(sections[1::2], sections[2::2]):
             match = IN_PLACE.match(header + body)
             if match is None:

@@ -53,6 +53,8 @@ def select_traced_fixture_tests(
     fixture_readers: dict[str, list[str]],
     baseline_passed: set[str],
     declared_readers: dict[str, list[str]],
+    *,
+    widen: bool = False,
 ) -> list[dict] | None:
     """Select test files for fixture-only edits with observed, test-local readers."""
     sections = DIFF_HEADER.split(contents)
@@ -72,7 +74,7 @@ def select_traced_fixture_tests(
         readers.update(observed)
         declared = set(declared_readers.get(path, ()))
         observed_methods = {node_id.split("[", 1)[0] for node_id in observed}
-        if not declared or declared != observed_methods:
+        if widen or not declared or declared != observed_methods:
             reader_files.update(manifest_files[node_id] for node_id in observed)
     return [
         test for test in tests

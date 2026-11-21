@@ -24,7 +24,21 @@ def equivalent_python(before: str, after: str, path: str) -> bool:
         return False
     before_code = compile(before, path, "exec", dont_inherit=True)
     after_code = compile(after, path, "exec", dont_inherit=True)
-    return _without_locations(before_code) == _without_locations(after_code)
+    if _without_locations(before_code) == _without_locations(after_code):
+        return True
+
+    # Python 3.13 also emits class __firstlineno__ as a bytecode constant.
+    # Canonicalize locations before compilation instead of rewriting integers
+    # in co_consts, where the same constant may be used by program logic.
+    for tree in (before_ast, after_ast):
+        for node in ast.walk(tree):
+            if "lineno" in node._attributes:
+                node.lineno = node.end_lineno = 1
+                node.col_offset = node.end_col_offset = 0
+    return (
+        _without_locations(compile(before_ast, path, "exec", dont_inherit=True))
+        == _without_locations(compile(after_ast, path, "exec", dont_inherit=True))
+    )
 
 
 def select_patch_tests(
@@ -45,6 +59,8 @@ def select_patch_tests(
 
         fixture_sections, python_sections = [], []
         equivalent = False
+        source_reader_ids = set()
+        source_readers = coverage_map.get("source_readers", {})
         for header, body in zip(sections[1::2], sections[2::2]):
             match = IN_PLACE.match(header + body)
             if match is None:
@@ -54,12 +70,13 @@ def select_patch_tests(
             if path.startswith("tests/fixtures/") and path.endswith(".sql"):
                 fixture_sections.append(section)
             elif path.startswith("sqlglot/") and path.endswith(".py"):
-                if path not in source_reads:
+                if path not in source_reads or path in source_readers:
                     before = (baseline / path).read_text(encoding="utf-8")
                     diff = body[body.index("\n@@ ") + 1:]
                     after, _, _ = apply_hunks(before, diff)
                     if equivalent_python(before, after, path):
                         equivalent = True
+                        source_reader_ids.update(source_readers.get(path, ()))
                         continue
                 python_sections.append(section)
             else:
@@ -67,15 +84,18 @@ def select_patch_tests(
     except (OSError, UnicodeError, ValueError, SyntaxError, RecursionError):
         return tests, False, False, False
 
-    if fixture_sections and python_sections:
-        # A fixture edit can take a different source path on the same patch.
+    files_by_id = {test["id"]: test["file"] for test in tests}
+    if not source_reader_ids <= files_by_id.keys():
         return tests, equivalent, False, False
-
-    selected = {test["id"] for test in tests if test["id"] not in baseline_passed}
+    reader_files = {files_by_id[node_id] for node_id in source_reader_ids}
+    selected = {
+        test["id"] for test in tests
+        if test["id"] not in baseline_passed or test["file"] in reader_files
+    }
     if fixture_sections:
         fixtures = select_traced_fixture_tests(
             "".join(fixture_sections), tests, coverage_map.get("fixture_readers", {}),
-            baseline_passed, declared_readers,
+            baseline_passed, declared_readers, widen=bool(python_sections),
         )
         if fixtures is None:
             return tests, equivalent, False, False
@@ -83,11 +103,14 @@ def select_patch_tests(
     used_dialect_map = False
     if python_sections:
         python_diff = "".join(python_sections)
-        code = select_dialect_tests(python_diff, tests, coverage_map, baseline, always_run)
+        code = select_dialect_tests(
+            python_diff, tests, coverage_map, baseline, always_run, widen=bool(fixture_sections),
+        )
         used_dialect_map = code is not None
         if code is None:
             code = select_covered_tests(
                 python_diff, tests, coverage_map["files"], baseline, always_run=always_run,
+                widen=bool(fixture_sections),
             )
         if code is tests:
             return tests, equivalent, bool(fixture_sections), False

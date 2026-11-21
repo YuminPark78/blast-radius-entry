@@ -23,7 +23,8 @@ class CoverageContexts:
         self.fixture_root = root / "tests" / "fixtures"
         self.fixture_readers: dict[str, set[str]] = defaultdict(set)
         self.shared_fixtures: set[str] = set()
-        self.source_reads: set[str] = set()
+        self.source_readers: dict[str, set[str]] = defaultdict(set)
+        self.shared_source_reads: set[str] = set()
         self.active_test: str | None = None
         self.test_thread = get_ident()
         self.trace_fixtures = False
@@ -43,7 +44,25 @@ class CoverageContexts:
         try:
             resolved = Path(path).resolve()
             if resolved.suffix == ".py" and resolved.is_relative_to(self.root / "sqlglot"):
-                self.source_reads.add(resolved.relative_to(self.root).as_posix())
+                frame = sys._getframe(1)
+                origin = frame.f_globals.get("__name__", "")
+                caller = frame.f_back
+                # Ignore coverage's own reads and importlib loading executable code.
+                if origin == "coverage" or origin.startswith("coverage."):
+                    return
+                if (
+                    origin == "_frozen_importlib_external"
+                    and frame.f_code.co_name == "get_data"
+                    and caller is not None
+                    and caller.f_globals.get("__name__") == origin
+                    and caller.f_code.co_name == "get_code"
+                ):
+                    return
+                name = resolved.relative_to(self.root).as_posix()
+                if self.active_test is None or get_ident() != self.test_thread:
+                    self.shared_source_reads.add(name)
+                else:
+                    self.source_readers[name].add(self.active_test)
                 return
             if not resolved.is_relative_to(self.fixture_root):
                 return
@@ -155,7 +174,12 @@ def main():
         "baseline_passed": sorted(passed),
         "files": files,
         "dialect_usage": contexts.dialects.export(passed),
-        "source_reads": sorted(contexts.source_reads),
+        "source_reads": sorted(contexts.shared_source_reads | contexts.source_readers.keys()),
+        "source_readers": {
+            name: sorted(tests)
+            for name, tests in sorted(contexts.source_readers.items())
+            if name not in contexts.shared_source_reads
+        },
         "fixture_readers": {
             name: sorted(readers)
             for name, readers in sorted(contexts.fixture_readers.items())
@@ -168,7 +192,7 @@ def main():
         f"{len(contexts.shared_fixtures)} had shared reads"
     )
     print(f"Mapped test usage of {len(document['dialect_usage'])} dialect implementation modules")
-    print(f"Observed direct reads of {len(contexts.source_reads)} Python source files")
+    print(f"Observed direct reads of {len(document['source_reads'])} Python source files")
     print(f"Mapped {len(files)} source files over {len(measured)} passing tests with coverage")
     print(f"Baseline had {len(contexts.nonpassing)} failed or skipped tests")
     print(f"Baseline had {len(passed - measured)} passing tests without source coverage")
