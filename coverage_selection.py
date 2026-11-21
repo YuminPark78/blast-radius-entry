@@ -113,7 +113,7 @@ def is_covered_body_edit(source: str, diff: str, coverage: dict) -> bool:
 
 
 def select_covered_tests(
-    patch: Path,
+    contents: str,
     tests: list[dict],
     coverage_map: dict,
     baseline: Path,
@@ -122,7 +122,6 @@ def select_covered_tests(
 ) -> list[dict]:
     """Narrow covered function-body edits and otherwise keep all test IDs."""
     try:
-        contents = patch.read_text(encoding="utf-8")
         sections = DIFF_HEADER.split(contents)
         if sections[0] or len(sections) < 3:
             return tests

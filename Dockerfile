@@ -7,10 +7,11 @@ RUN mkdir /baseline && tar -xzf /tmp/sqlglot.tar.gz -C /baseline --strip-compone
 COPY requirements.lock /build/
 RUN python -m pip install --no-cache-dir -r /build/requirements.lock coverage==7.10.7
 COPY build_coverage_map.py /build/
-RUN SKIP_INTEGRATION=0 PYTHONPATH=/baseline python /build/build_coverage_map.py /baseline /build/coverage_map.json
+RUN python -m compileall -q /baseline/sqlglot \
+ && SKIP_INTEGRATION=0 PYTHONPATH=/baseline python /build/build_coverage_map.py /baseline /build/coverage_map.json
 
 FROM baseline
 COPY --from=coverage-build /baseline/sqlglot /baseline/sqlglot
 COPY --from=coverage-build /build/coverage_map.json /app/coverage_map.json
-COPY selector.py coverage_selection.py fixture_selection.py /app/
+COPY selector.py coverage_selection.py fixture_selection.py semantic_selection.py fixture_map.json /app/
 CMD ["python", "/app/selector.py"]

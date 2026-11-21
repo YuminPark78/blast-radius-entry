@@ -48,32 +48,35 @@ def select_tests(patch: Path, tests, fixture_map, *, method_level=False):
 
 
 def select_traced_fixture_tests(
-    patch: Path,
+    contents: str,
     tests: list[dict],
     fixture_readers: dict[str, list[str]],
     baseline_passed: set[str],
+    declared_readers: dict[str, list[str]],
 ) -> list[dict] | None:
     """Select test files for fixture-only edits with observed, test-local readers."""
-    try:
-        sections = DIFF_HEADER.split(patch.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError):
-        return None
+    sections = DIFF_HEADER.split(contents)
     if sections[0] or len(sections) < 3:
         return None
 
-    readers = set()
+    readers, reader_files = set(), set()
+    manifest_files = {test["id"]: test["file"] for test in tests}
     for header, body in zip(sections[1::2], sections[2::2]):
         match = IN_PLACE.match(header + body)
-        if match is None or not fixture_readers.get(match["path"]):
+        if match is None:
             return None
-        readers.update(fixture_readers[match["path"]])
-
-    test_files = {test["id"]: test["file"] for test in tests}
-    if not readers <= test_files.keys():
-        return None
-
-    reader_files = {test_files[node_id] for node_id in readers}
+        path = match["path"]
+        observed = set(fixture_readers.get(path, ()))
+        if not observed or not observed <= manifest_files.keys():
+            return None
+        readers.update(observed)
+        declared = set(declared_readers.get(path, ()))
+        observed_methods = {node_id.split("[", 1)[0] for node_id in observed}
+        if not declared or declared != observed_methods:
+            reader_files.update(manifest_files[node_id] for node_id in observed)
     return [
         test for test in tests
-        if test["file"] in reader_files or test["id"] not in baseline_passed
+        if test["id"] in readers
+        or test["file"] in reader_files
+        or test["id"] not in baseline_passed
     ]

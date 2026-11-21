@@ -5,8 +5,7 @@ import math
 import sys
 from pathlib import Path
 
-from coverage_selection import select_covered_tests
-from fixture_selection import select_traced_fixture_tests
+from semantic_selection import select_patch_tests
 
 DATA = Path("/data")
 BASELINE = Path("/baseline")
@@ -64,25 +63,30 @@ def main() -> None:
     coverage_map = json.loads(COVERAGE_MAP.read_text(encoding="utf-8"))
     measured = set(coverage_map["measured"])
     baseline_passed = set(coverage_map.get("baseline_passed", ()))
-    fixture_readers = coverage_map.get("fixture_readers", {})
+    declared_readers = json.loads(
+        Path(__file__).with_name("fixture_map.json").read_text(encoding="utf-8")
+    )
+    source_reads = frozenset(coverage_map["source_reads"])
     always_run = frozenset(test["id"] for test in tests if test["id"] not in measured)
     if always_run:
         print(f"Always including {len(always_run)} tests without reliable coverage", file=sys.stderr)
 
     full_schedule = choose_workers(tests)
-    narrowed = fixture_narrowed = 0
+    narrowed = fixture_narrowed = identical_python = 0
     for patch in sorted((DATA / "commits").glob("*.patch")):
-        selected = select_traced_fixture_tests(patch, tests, fixture_readers, baseline_passed)
-        if selected is None:
-            selected = select_covered_tests(
-                patch, tests, coverage_map["files"], BASELINE, always_run=always_run
-            )
-        else:
-            fixture_narrowed += len(selected) < len(tests)
+        selected, equivalent, fixture = select_patch_tests(
+            patch, tests, coverage_map, BASELINE, baseline_passed, always_run,
+            source_reads, declared_readers,
+        )
         workers = full_schedule if selected is tests else choose_workers(selected)
         narrowed += len(selected) < len(tests)
+        fixture_narrowed += fixture and len(selected) < len(tests)
+        identical_python += equivalent
         print(json.dumps({"commit": patch.stem, "workers": workers}))
-    print(f"Coverage narrowed {narrowed} patches ({fixture_narrowed} fixture-only)", file=sys.stderr)
+    print(
+        f"Narrowed {narrowed} patches ({fixture_narrowed} with fixtures); "
+        f"matched Python AST and bytecode in {identical_python} patches", file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":

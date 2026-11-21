@@ -19,6 +19,7 @@ class CoverageContexts:
         self.fixture_root = root / "tests" / "fixtures"
         self.fixture_readers: dict[str, set[str]] = defaultdict(set)
         self.shared_fixtures: set[str] = set()
+        self.source_reads: set[str] = set()
         self.active_test: str | None = None
         self.test_thread = get_ident()
         self.trace_fixtures = False
@@ -26,17 +27,20 @@ class CoverageContexts:
         self.nonpassing = set()
         self.collection_failed = False
 
-    def record_fixture_open(self, event, args):
+    def record_file_open(self, event, args):
         if not self.trace_fixtures or event != "open":
             return
         raw_path, _, flags = args
         if not isinstance(raw_path, (str, bytes)) or (flags & os.O_ACCMODE) == os.O_WRONLY:
             return
         path = os.fsdecode(raw_path)
-        if not path.endswith(".sql"):
+        if not path.endswith((".sql", ".py")):
             return
         try:
             resolved = Path(path).resolve()
+            if resolved.suffix == ".py" and resolved.is_relative_to(self.root / "sqlglot"):
+                self.source_reads.add(resolved.relative_to(self.root).as_posix())
+                return
             if not resolved.is_relative_to(self.fixture_root):
                 return
             name = resolved.relative_to(self.root).as_posix()
@@ -81,7 +85,7 @@ def main():
         data_file=None, config_file=False, source=[str(root / "sqlglot")]
     )
     contexts = CoverageContexts(collector, root)
-    sys.addaudithook(contexts.record_fixture_open)
+    sys.addaudithook(contexts.record_file_open)
     collector.start()
     contexts.trace_fixtures = True
     try:
@@ -123,6 +127,7 @@ def main():
         "measured": sorted(measured),
         "baseline_passed": sorted(passed),
         "files": files,
+        "source_reads": sorted(contexts.source_reads),
         "fixture_readers": {
             name: sorted(readers)
             for name, readers in sorted(contexts.fixture_readers.items())
@@ -134,6 +139,7 @@ def main():
         f"Mapped readers for {len(document['fixture_readers'])} SQL fixtures; "
         f"{len(contexts.shared_fixtures)} had shared reads"
     )
+    print(f"Observed direct reads of {len(contexts.source_reads)} Python source files")
     print(f"Mapped {len(files)} source files over {len(measured)} passing tests with coverage")
     print(f"Baseline had {len(contexts.nonpassing)} failed or skipped tests")
     print(f"Baseline had {len(passed - measured)} passing tests without source coverage")
