@@ -1,0 +1,175 @@
+Sample cases by label: {'code': 16, 'fixture': 8, 'multi': 3, 'comment': 3}
+Patches with failures: 18
+
+2haz  code  0 failing
+  changes: a/sqlglot/dialects/dialect.py b/sqlglot/dialects/dialect.py
+  selected: 1620 at file level, 1620 at method level
+2jrq  code  8 failing
+  changes: a/sqlglot/optimizer/eliminate_joins.py b/sqlglot/optimizer/eliminate_joins.py
+  fails:   1104  tests/test_executor.py::TestExecutor::test_execute_subqueries
+  fails:   1106  tests/test_executor.py::TestExecutor::test_execute_tpcds
+  fails:   1325  tests/test_optimizer.py::TestOptimizer::test_eliminate_joins
+  fails:   1355  tests/test_optimizer.py::TestOptimizer::test_optimize
+  fails:   1369  tests/test_optimizer.py::TestOptimizer::test_optimize_special_joins
+  fails:   1381  tests/test_optimizer.py::TestOptimizer::test_pushdown_projections_prunes_non_self_referencing_ctes
+  fails:   1440  tests/test_optimizer.py::TestOptimizer::test_tpcds
+  fails:   1441  tests/test_optimizer.py::TestOptimizer::test_tpch
+  selected: 1620 at file level, 1620 at method level
+2qn5  code  0 failing
+  changes: a/sqlglot/generators/clickhouse.py b/sqlglot/generators/clickhouse.py
+  selected: 1620 at file level, 1620 at method level
+2vdj  fixture  1 failing
+  changes: a/tests/fixtures/optimizer/pushdown_predicates.sql b/tests/fixtures/optimizer/pushdown_predicates.sql
+  fails:   1377  tests/test_optimizer.py::TestOptimizer::test_pushdown_predicates
+  selected: 167 at file level, 1 at method level
+3utz  code  37 failing
+  changes: a/sqlglot/serde.py b/sqlglot/serde.py
+  fails:    139  tests/dialects/test_databricks.py::TestDatabricks::test_optimize
+  fails:    909  tests/dialects/test_teradata.py::TestTeradata::test_execute
+  fails:    914  tests/dialects/test_teradata.py::TestTeradata::test_hex_character_string
+  fails:    919  tests/dialects/test_teradata.py::TestTeradata::test_named
+  fails:    921  tests/dialects/test_teradata.py::TestTeradata::test_named_attribute_order
+  fails:    927  tests/dialects/test_teradata.py::TestTeradata::test_title
+  fails:   1106  tests/test_executor.py::TestExecutor::test_execute_tpcds
+  fails:   1107  tests/test_executor.py::TestExecutor::test_execute_tpch
+  fails:   1185  tests/test_expressions.py::TestExprs::test_ref_type_builder
+  fails:   1313  tests/test_optimizer.py::TestOptimizer::test_canonicalize
+  fails:   1314  tests/test_optimizer.py::TestOptimizer::test_canonicalize_internal_names
+  fails:   1324  tests/test_optimizer.py::TestOptimizer::test_eliminate_ctes
+  fails:   1325  tests/test_optimizer.py::TestOptimizer::test_eliminate_joins
+  fails:   1327  tests/test_optimizer.py::TestOptimizer::test_eliminate_subqueries
+  fails:   1335  tests/test_optimizer.py::TestOptimizer::test_isolate_table_selects
+  fails:   1343  tests/test_optimizer.py::TestOptimizer::test_merge_subqueries
+  fails:   1352  tests/test_optimizer.py::TestOptimizer::test_normalize
+  fails:   1353  tests/test_optimizer.py::TestOptimizer::test_normalize_identifiers
+  fails:   1355  tests/test_optimizer.py::TestOptimizer::test_optimize
+  fails:   1362  tests/test_optimizer.py::TestOptimizer::test_optimize_joins
+  fails:   1375  tests/test_optimizer.py::TestOptimizer::test_pushdown_cte_alias_columns
+  fails:   1377  tests/test_optimizer.py::TestOptimizer::test_pushdown_predicates
+  fails:   1378  tests/test_optimizer.py::TestOptimizer::test_pushdown_projection
+  fails:   1382  tests/test_optimizer.py::TestOptimizer::test_qualify_columns
+  fails:   1384  tests/test_optimizer.py::TestOptimizer::test_qualify_columns__with_invisible
+  fails:   1397  tests/test_optimizer.py::TestOptimizer::test_qualify_order_by_source_columns
+  fails:   1417  tests/test_optimizer.py::TestOptimizer::test_qualify_tables
+  fails:   1420  tests/test_optimizer.py::TestOptimizer::test_quote_identifiers
+  fails:   1434  tests/test_optimizer.py::TestOptimizer::test_simplify
+  fails:   1440  tests/test_optimizer.py::TestOptimizer::test_tpcds
+  fails:   1441  tests/test_optimizer.py::TestOptimizer::test_tpch
+  fails:   1454  tests/test_optimizer.py::TestOptimizer::test_unnest_subqueries
+  fails:   1558  tests/test_serde.py::TestSerde::test_custom_expression
+  fails:   1559  tests/test_serde.py::TestSerde::test_meta
+  fails:   1560  tests/test_serde.py::TestSerde::test_recursion
+  fails:   1561  tests/test_serde.py::TestSerde::test_serde
+  fails:   1562  tests/test_serde.py::TestSerde::test_type_annotations
+  selected: 1620 at file level, 1620 at method level
+4d63  code  0 failing
+  changes: a/sqlglot/dialects/snowflake.py b/sqlglot/dialects/snowflake.py
+  selected: 1620 at file level, 1620 at method level
+535z  code  1 failing
+  changes: a/sqlglot/dialects/tsql.py b/sqlglot/dialects/tsql.py
+  fails:   1434  tests/test_optimizer.py::TestOptimizer::test_simplify
+  selected: 1620 at file level, 1620 at method level
+5y72  code  0 failing
+  changes: a/sqlglot/optimizer/eliminate_subqueries.py b/sqlglot/optimizer/eliminate_subqueries.py
+  selected: 1620 at file level, 1620 at method level
+66ks  code  0 failing
+  changes: a/sqlglot/executor/context.py b/sqlglot/executor/context.py
+  selected: 1620 at file level, 1620 at method level
+6vvp  fixture  1 failing
+  changes: a/tests/fixtures/optimizer/qualify_columns__invalid.sql b/tests/fixtures/optimizer/qualify_columns__invalid.sql
+  fails:   1383  tests/test_optimizer.py::TestOptimizer::test_qualify_columns__invalid
+  selected: 167 at file level, 1 at method level
+6ze8  code  1 failing
+  changes: a/sqlglot/parsers/dremio.py b/sqlglot/parsers/dremio.py
+  fails:    302  tests/dialects/test_dremio.py::TestDremio::test_regexp_split
+  selected: 1620 at file level, 1620 at method level
+8y7j  code  0 failing
+  changes: a/sqlglot/generators/clickhouse.py b/sqlglot/generators/clickhouse.py
+  selected: 1620 at file level, 1620 at method level
+986c  multi  1 failing
+  changes: a/sqlglot/dialects/singlestore.py b/sqlglot/dialects/singlestore.py
+  changes: a/sqlglot/typing/snowflake.py b/sqlglot/typing/snowflake.py
+  changes: a/tests/fixtures/optimizer/unnest_subqueries.sql b/tests/fixtures/optimizer/unnest_subqueries.sql
+  fails:   1454  tests/test_optimizer.py::TestOptimizer::test_unnest_subqueries
+  selected: 1620 at file level, 1620 at method level
+9u5k  comment  0 failing
+  changes: a/sqlglot/generators/sqlite.py b/sqlglot/generators/sqlite.py
+  selected: 1620 at file level, 1620 at method level
+ary6  code  10 failing
+  changes: a/sqlglot/parsers/bigquery.py b/sqlglot/parsers/bigquery.py
+  fails:     27  tests/dialects/test_bigquery.py::TestBigQuery::test_bigquery
+  fails:     42  tests/dialects/test_bigquery.py::TestBigQuery::test_information_schema_roundtrip
+  fails:     54  tests/dialects/test_bigquery.py::TestBigQuery::test_ml_functions
+  fails:     64  tests/dialects/test_bigquery.py::TestBigQuery::test_quoted_identifier_meta
+  fails:   1189  tests/test_expressions.py::TestExprs::test_replace_tables
+  fails:   1355  tests/test_optimizer.py::TestOptimizer::test_optimize
+  fails:   1382  tests/test_optimizer.py::TestOptimizer::test_qualify_columns
+  fails:   1417  tests/test_optimizer.py::TestOptimizer::test_qualify_tables
+  fails:   1420  tests/test_optimizer.py::TestOptimizer::test_quote_identifiers
+  fails:   1519  tests/test_parser.py::TestParser::test_ref_type
+  selected: 1620 at file level, 1620 at method level
+bap8  comment  0 failing
+  changes: a/sqlglot/transforms.py b/sqlglot/transforms.py
+  selected: 1620 at file level, 1620 at method level
+bj7g  code  1 failing
+  changes: a/sqlglot/generators/clickhouse.py b/sqlglot/generators/clickhouse.py
+  fails:     94  tests/dialects/test_clickhouse.py::TestClickhouse::test_clickhouse_values
+  selected: 1620 at file level, 1620 at method level
+bvw2  multi  1 failing
+  changes: a/sqlglot/dialects/materialize.py b/sqlglot/dialects/materialize.py
+  changes: a/tests/fixtures/optimizer/annotate_types.sql b/tests/fixtures/optimizer/annotate_types.sql
+  fails:   1302  tests/test_optimizer.py::TestOptimizer::test_annotate_types
+  selected: 1620 at file level, 1620 at method level
+egys  fixture  1 failing
+  changes: a/tests/fixtures/optimizer/simplify.sql b/tests/fixtures/optimizer/simplify.sql
+  fails:   1434  tests/test_optimizer.py::TestOptimizer::test_simplify
+  selected: 167 at file level, 1 at method level
+f4bn  fixture  1 failing
+  changes: a/tests/fixtures/optimizer/pushdown_cte_alias_columns.sql b/tests/fixtures/optimizer/pushdown_cte_alias_columns.sql
+  fails:   1375  tests/test_optimizer.py::TestOptimizer::test_pushdown_cte_alias_columns
+  selected: 167 at file level, 1 at method level
+f4xa  comment  0 failing
+  changes: a/sqlglot/generators/drill.py b/sqlglot/generators/drill.py
+  selected: 1620 at file level, 1620 at method level
+fryt  code  0 failing
+  changes: a/sqlglot/parsers/dremio.py b/sqlglot/parsers/dremio.py
+  selected: 1620 at file level, 1620 at method level
+gbav  code  0 failing
+  changes: a/sqlglot/parsers/singlestore.py b/sqlglot/parsers/singlestore.py
+  selected: 1620 at file level, 1620 at method level
+gbhk  fixture  1 failing
+  changes: a/tests/fixtures/optimizer/annotate_types.sql b/tests/fixtures/optimizer/annotate_types.sql
+  fails:   1302  tests/test_optimizer.py::TestOptimizer::test_annotate_types
+  selected: 167 at file level, 1 at method level
+j6uz  code  2 failing
+  changes: a/sqlglot/parsers/bigquery.py b/sqlglot/parsers/bigquery.py
+  fails:     27  tests/dialects/test_bigquery.py::TestBigQuery::test_bigquery
+  fails:   1295  tests/test_optimizer.py::TestOptimizer::test_annotate_funcs
+  selected: 1620 at file level, 1620 at method level
+ktz3  code  0 failing
+  changes: a/sqlglot/expressions/ddl.py b/sqlglot/expressions/ddl.py
+  selected: 1620 at file level, 1620 at method level
+mthh  fixture  1 failing
+  changes: a/tests/fixtures/optimizer/merge_subqueries.sql b/tests/fixtures/optimizer/merge_subqueries.sql
+  fails:   1343  tests/test_optimizer.py::TestOptimizer::test_merge_subqueries
+  selected: 167 at file level, 1 at method level
+nwnx  fixture  1 failing
+  changes: a/tests/fixtures/optimizer/pushdown_projections.sql b/tests/fixtures/optimizer/pushdown_projections.sql
+  fails:   1378  tests/test_optimizer.py::TestOptimizer::test_pushdown_projection
+  selected: 167 at file level, 1 at method level
+rszg  multi  3 failing
+  changes: a/sqlglot/optimizer/scope.py b/sqlglot/optimizer/scope.py
+  changes: a/sqlglot/typing/snowflake.py b/sqlglot/typing/snowflake.py
+  changes: a/tests/fixtures/optimizer/qualify_columns_ddl.sql b/tests/fixtures/optimizer/qualify_columns_ddl.sql
+  fails:   1295  tests/test_optimizer.py::TestOptimizer::test_annotate_funcs
+  fails:   1355  tests/test_optimizer.py::TestOptimizer::test_optimize
+  fails:   1382  tests/test_optimizer.py::TestOptimizer::test_qualify_columns
+  selected: 1620 at file level, 1620 at method level
+st8f  fixture  1 failing
+  changes: a/tests/fixtures/optimizer/isolate_table_selects.sql b/tests/fixtures/optimizer/isolate_table_selects.sql
+  fails:   1335  tests/test_optimizer.py::TestOptimizer::test_isolate_table_selects
+  selected: 167 at file level, 1 at method level
+
+full suite: 1210.470 s, 0 misses, 1210.470 s before penalties
+fixture file: 988.526 s, 0 misses, 988.526 s before penalties
+fixture methods: 905.578 s, 0 misses, 905.578 s before penalties
