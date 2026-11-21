@@ -1,30 +1,60 @@
-"""Run the pinned test suite once and write source-file coverage by pytest ID."""
+"""Record SQLGlot source coverage and fixture reads during the baseline tests."""
 
 import argparse
-import ast
 import json
 import os
+import sys
+from collections import defaultdict
 from pathlib import Path
+from threading import get_ident
 
 import coverage
 import pytest
 
-from coverage_selection import source_functions
-
 
 class CoverageContexts:
-    def __init__(self, collector):
+    def __init__(self, collector, root: Path):
         self.collector = collector
+        self.root = root
+        self.fixture_root = root / "tests" / "fixtures"
+        self.fixture_readers: dict[str, set[str]] = defaultdict(set)
+        self.shared_fixtures: set[str] = set()
+        self.active_test: str | None = None
+        self.test_thread = get_ident()
+        self.trace_fixtures = False
         self.passed = set()
         self.nonpassing = set()
         self.collection_failed = False
 
+    def record_fixture_open(self, event, args):
+        if not self.trace_fixtures or event != "open":
+            return
+        raw_path, _, flags = args
+        if not isinstance(raw_path, (str, bytes)) or (flags & os.O_ACCMODE) == os.O_WRONLY:
+            return
+        path = os.fsdecode(raw_path)
+        if not path.endswith(".sql"):
+            return
+        try:
+            resolved = Path(path).resolve()
+            if not resolved.is_relative_to(self.fixture_root):
+                return
+            name = resolved.relative_to(self.root).as_posix()
+        except (OSError, RuntimeError, ValueError):
+            return
+        if self.active_test is None or get_ident() != self.test_thread:
+            self.shared_fixtures.add(name)
+        else:
+            self.fixture_readers[name].add(self.active_test)
+
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtest_call(self, item):
         self.collector.switch_context(item.nodeid)
+        self.active_test = item.nodeid
         try:
             yield
         finally:
+            self.active_test = None
             self.collector.switch_context("")
 
     def pytest_runtest_logreport(self, report):
@@ -50,11 +80,14 @@ def main():
     collector = coverage.Coverage(
         data_file=None, config_file=False, source=[str(root / "sqlglot")]
     )
-    contexts = CoverageContexts(collector)
+    contexts = CoverageContexts(collector, root)
+    sys.addaudithook(contexts.record_fixture_open)
     collector.start()
+    contexts.trace_fixtures = True
     try:
         result = pytest.main(["-o", "addopts=", "-q", "tests"], plugins=[contexts])
     finally:
+        contexts.trace_fixtures = False
         collector.stop()
     if contexts.collection_failed or result not in (
         pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED
@@ -68,36 +101,38 @@ def main():
     for filename in sorted(data.measured_files()):
         relative_path = Path(filename).relative_to(root).as_posix()
         contexts_by_line = data.contexts_by_lineno(filename)
-        tests, shared_lines, line_tests = set(), [], {}
+        tests, shared_lines, tested_lines = set(), [], []
         for number, names in sorted(contexts_by_line.items()):
             ran_here = passed.intersection(names)
             if ran_here:
                 tests.update(ran_here)
-                line_tests[number] = ran_here
+                tested_lines.append(number)
             if "" in names:
                 shared_lines.append(number)
         if tests:
-            functions = {}
-            tree = ast.parse(Path(filename).read_bytes())
-            for function in source_functions(tree):
-                first_line = function.body[0].lineno
-                hits = set()
-                for number in range(first_line, function.end_lineno + 1):
-                    hits.update(line_tests.get(number, ()))
-                if hits:
-                    functions[str(first_line)] = sorted(hits)
             measured.update(tests)
             files[relative_path] = {
                 "tests": sorted(tests),
                 "shared_lines": shared_lines,
-                "functions": functions,
+                "tested_lines": tested_lines,
             }
 
     if not files:
         raise SystemExit("No per-test SQLGlot coverage was collected")
-    output.write_text(
-        json.dumps({"measured": sorted(measured), "files": files}, separators=(",", ":")),
-        encoding="utf-8",
+    document = {
+        "measured": sorted(measured),
+        "baseline_passed": sorted(passed),
+        "files": files,
+        "fixture_readers": {
+            name: sorted(readers)
+            for name, readers in sorted(contexts.fixture_readers.items())
+            if name not in contexts.shared_fixtures
+        },
+    }
+    output.write_text(json.dumps(document, separators=(",", ":")), encoding="utf-8")
+    print(
+        f"Mapped readers for {len(document['fixture_readers'])} SQL fixtures; "
+        f"{len(contexts.shared_fixtures)} had shared reads"
     )
     print(f"Mapped {len(files)} source files over {len(measured)} passing tests with coverage")
     print(f"Baseline had {len(contexts.nonpassing)} failed or skipped tests")

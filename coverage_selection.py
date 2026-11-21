@@ -61,60 +61,55 @@ def apply_hunks(source: str, diff: str) -> tuple[str, set[int], set[int]]:
     return "\n".join(proposed) + "\n", removed, added
 
 
-def source_functions(tree: ast.Module):
-    for node in tree.body:
-        members = node.body if isinstance(node, ast.ClassDef) else [node]
-        for member in members:
-            if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                yield member
-
-
 def source_shape(source: str):
     """Keep module and class structure, recording existing function bodies separately."""
     tree = ast.parse(source)
     functions = []
-    for member in source_functions(tree):
-        imports = [
-            ast.dump(item)
-            for statement in member.body
-            for item in ast.walk(statement)
-            if isinstance(item, (ast.Import, ast.ImportFrom))
-        ]
-        functions.append((
-            ast.dump(ast.Module(body=member.body, type_ignores=[])),
-            range(member.body[0].lineno, member.end_lineno + 1),
-            imports,
-        ))
-        docstring = ast.get_docstring(member, clean=False)
-        member.body = [] if docstring is None else [ast.Expr(value=ast.Constant(docstring))]
+    for node in tree.body:
+        members = node.body if isinstance(node, ast.ClassDef) else [node]
+        for member in members:
+            if not isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            imports = [
+                ast.dump(item)
+                for statement in member.body
+                for item in ast.walk(statement)
+                if isinstance(item, (ast.Import, ast.ImportFrom))
+            ]
+            functions.append((
+                ast.dump(ast.Module(body=member.body, type_ignores=[])),
+                range(member.body[0].lineno, member.end_lineno + 1),
+                imports,
+            ))
+            docstring = ast.get_docstring(member, clean=False)
+            member.body = [] if docstring is None else [ast.Expr(value=ast.Constant(docstring))]
     return ast.dump(tree), functions
 
 
-def covered_body_edit(source: str, diff: str, coverage: dict) -> tuple[str, set[str]] | None:
+def is_covered_body_edit(source: str, diff: str, coverage: dict) -> bool:
     changed_source, removed, added = apply_hunks(source, diff)
     old_shape, old_functions = source_shape(source)
     new_shape, new_functions = source_shape(changed_source)
     if old_shape != new_shape or len(old_functions) != len(new_functions):
-        return None
+        return False
 
     shared = set(coverage["shared_lines"])
-    functions = coverage["functions"]
-    affected_tests = set()
+    tested = set(coverage["tested_lines"])
     old_lines, new_lines = set(), set()
     for (old_body, old_span, old_imports), (new_body, new_span, new_imports) in zip(
         old_functions, new_functions
     ):
         if old_body == new_body:
             continue
-        function_tests = functions.get(str(old_span.start))
-        if old_imports != new_imports or shared.intersection(old_span) or not function_tests:
-            return None
-        affected_tests.update(function_tests)
+        if (
+            old_imports != new_imports
+            or shared.intersection(old_span)
+            or not tested.intersection(old_span)
+        ):
+            return False
         old_lines.update(old_span)
         new_lines.update(new_span)
-    if old_lines and removed <= old_lines and added <= new_lines:
-        return changed_source, affected_tests
-    return None
+    return bool(old_lines) and removed <= old_lines and added <= new_lines
 
 
 def select_covered_tests(
@@ -124,39 +119,35 @@ def select_covered_tests(
     baseline: Path,
     *,
     always_run: frozenset[str] = frozenset(),
-) -> tuple[list[dict], set[str], dict[str, str]]:
-    """Return conservative candidates, function-level IDs, and patched files."""
+) -> list[dict]:
+    """Narrow covered function-body edits and otherwise keep all test IDs."""
     try:
         contents = patch.read_text(encoding="utf-8")
         sections = DIFF_HEADER.split(contents)
         if sections[0] or len(sections) < 3:
-            return tests, set(), {}
+            return tests
 
-        candidates, core = set(), set(always_run)
-        changes = {}
+        candidates = set()
         for header, body in zip(sections[1::2], sections[2::2]):
             match = IN_PLACE.match(header + body)
             if match is None:
-                return tests, set(), {}
+                return tests
             path = match["path"]
             coverage = coverage_map.get(path)
             if not path.startswith("sqlglot/") or not path.endswith(".py") or not coverage:
-                return tests, set(), {}
+                return tests
             source = (baseline / path).read_text(encoding="utf-8")
             diff = body[body.index("\n@@ ") + 1:]
-            edit = covered_body_edit(source, diff, coverage)
-            if edit is None or path in changes:
-                return tests, set(), {}
-            changes[path], affected_tests = edit
-            core.update(affected_tests)
+            if not is_covered_body_edit(source, diff, coverage):
+                return tests
             candidates.update(coverage["tests"])
     except (OSError, UnicodeError, ValueError, SyntaxError):
-        return tests, set(), {}
+        return tests
 
     if candidates.isdisjoint(test["id"] for test in tests):
-        return tests, set(), {}
+        return tests
     candidates.update(always_run)
     # Coverage from the baseline can omit tests in the same test module that
     # reach different code paths after the patch.
     test_files = {test["file"] for test in tests if test["id"] in candidates}
-    return [test for test in tests if test["file"] in test_files], core, changes
+    return [test for test in tests if test["file"] in test_files]

@@ -45,3 +45,35 @@ def select_tests(patch: Path, tests, fixture_map, *, method_level=False):
 
     optimizer = [t for t in tests if t["file"] == OPTIMIZER_TEST_FILE]
     return optimizer or tests
+
+
+def select_traced_fixture_tests(
+    patch: Path,
+    tests: list[dict],
+    fixture_readers: dict[str, list[str]],
+    baseline_passed: set[str],
+) -> list[dict] | None:
+    """Select test files for fixture-only edits with observed, test-local readers."""
+    try:
+        sections = DIFF_HEADER.split(patch.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        return None
+    if sections[0] or len(sections) < 3:
+        return None
+
+    readers = set()
+    for header, body in zip(sections[1::2], sections[2::2]):
+        match = IN_PLACE.match(header + body)
+        if match is None or not fixture_readers.get(match["path"]):
+            return None
+        readers.update(fixture_readers[match["path"]])
+
+    test_files = {test["id"]: test["file"] for test in tests}
+    if not readers <= test_files.keys():
+        return None
+
+    reader_files = {test_files[node_id] for node_id in readers}
+    return [
+        test for test in tests
+        if test["file"] in reader_files or test["id"] not in baseline_passed
+    ]

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from coverage_selection import select_covered_tests
-from verify_tests import PYTEST_STARTUP_SECONDS, Verifier, probe_candidates
+from fixture_selection import select_traced_fixture_tests
 
 DATA = Path("/data")
 BASELINE = Path("/baseline")
@@ -59,48 +59,30 @@ def choose_workers(tests: list[dict]) -> list[list[int]]:
     return [worker for worker in best_workers if worker]
 
 
-def schedule_seconds(workers: list[list[int]], seconds: dict[int, float]) -> float:
-    longest = max((sum(seconds[number] for number in worker) for worker in workers), default=0)
-    return longest + (WORKER_COST_MS / 1000) * len(workers)
-
-
 def main() -> None:
     tests = json.loads((DATA / "tests.json").read_text(encoding="utf-8"))["tests"]
     coverage_map = json.loads(COVERAGE_MAP.read_text(encoding="utf-8"))
     measured = set(coverage_map["measured"])
+    baseline_passed = set(coverage_map.get("baseline_passed", ()))
+    fixture_readers = coverage_map.get("fixture_readers", {})
     always_run = frozenset(test["id"] for test in tests if test["id"] not in measured)
     if always_run:
         print(f"Always including {len(always_run)} tests without reliable coverage", file=sys.stderr)
 
     full_schedule = choose_workers(tests)
-    seconds = {test["number"]: test["seconds"] for test in tests}
-    verifier = Verifier(BASELINE)
-    narrowed = removed = 0
-    verification_cpu = 0.0
+    narrowed = fixture_narrowed = 0
     for patch in sorted((DATA / "commits").glob("*.patch")):
-        selected, core, changes = select_covered_tests(
-            patch, tests, coverage_map["files"], BASELINE, always_run=always_run
-        )
+        selected = select_traced_fixture_tests(patch, tests, fixture_readers, baseline_passed)
+        if selected is None:
+            selected = select_covered_tests(
+                patch, tests, coverage_map["files"], BASELINE, always_run=always_run
+            )
+        else:
+            fixture_narrowed += len(selected) < len(tests)
         workers = full_schedule if selected is tests else choose_workers(selected)
-        if changes and (probe := probe_candidates(selected, core)):
-            ids = {test["id"] for test in probe}
-            possible = [test for test in selected if test["id"] not in ids]
-            initial_cost = schedule_seconds(workers, seconds)
-            potential = initial_cost - schedule_seconds(choose_workers(possible), seconds)
-            # Recorded wall time is a rough guide; measure CPU after running.
-            estimate = PYTEST_STARTUP_SECONDS + 0.5 * sum(test["seconds"] for test in probe)
-            if potential > estimate:
-                passed, used_cpu = verifier.run(changes, ids)
-                verification_cpu += used_cpu
-                remaining = [test for test in selected if test["id"] not in passed]
-                verified_workers = choose_workers(remaining)
-                if initial_cost - schedule_seconds(verified_workers, seconds) > used_cpu:
-                    removed += len(selected) - len(remaining)
-                    selected, workers = remaining, verified_workers
         narrowed += len(selected) < len(tests)
         print(json.dumps({"commit": patch.stem, "workers": workers}))
-    print(f"Coverage narrowed {narrowed} patches", file=sys.stderr)
-    print(f"Verification removed {removed} passed tests using {verification_cpu:.2f}s CPU", file=sys.stderr)
+    print(f"Coverage narrowed {narrowed} patches ({fixture_narrowed} fixture-only)", file=sys.stderr)
 
 
 if __name__ == "__main__":
